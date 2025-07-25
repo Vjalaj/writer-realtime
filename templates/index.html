@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Writer - Real-time Text Editor</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #8b5cf6;
+            --accent: #06b6d4;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --error: #ef4444;
+            --dark: #0f172a;
+            --gray-50: #f8fafc;
+            --gray-100: #f1f5f9;
+            --gray-200: #e2e8f0;
+            --gray-300: #cbd5e1;
+            --gray-400: #94a3b8;
+            --gray-500: #64748b;
+            --gray-600: #475569;
+            --gray-700: #334155;
+            --gray-800: #1e293b;
+            --gray-900: #0f172a;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 25%, #667eea 50%, #764ba2 75%, #f093fb 100%);
+            background-size: 400% 400%;
+            animation: gradientShift 15s ease infinite;
+            min-height: 100vh;
+            padding: 20px;
+            position: relative;
+            overflow-x: hidden;
+        }
+        
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="50" cy="50" r="0.5" fill="%23ffffff" opacity="0.1"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>') repeat;
+            pointer-events: none;
+            z-index: -1;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(40px) saturate(180%);
+            border-radius: 32px;
+            box-shadow: 
+                0 60px 120px rgba(0, 0, 0, 0.25),
+                0 25px 50px rgba(0, 0, 0, 0.15),
+                inset 0 1px 0 rgba(255, 255, 255, 0.4),
+                inset 0 -1px 0 rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+            border: 2px solid rgba(255, 255, 255, 0.15);
+            position: relative;
+        }
+        
+        .container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+        }
+        
+        .header {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.9) 0%, rgba(139, 92, 246, 0.9) 50%, rgba(6, 182, 212, 0.9) 100%);
+            backdrop-filter: blur(20px);
+            color: white;
+            padding: 48px 32px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(255, 255, 255, 0.05) 0%, transparent 50%),
+                radial-gradient(circle at 40% 60%, rgba(255, 255, 255, 0.08) 0%, transparent 50%);
+            animation: float 25s ease-in-out infinite;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            33% { transform: translateY(-8px) rotate(1deg); }
+            66% { transform: translateY(4px) rotate(-1deg); }
+        }
+        
+        .header h1 {
+            font-size: 4em;
+            font-weight: 200;
+            letter-spacing: -0.02em;
+            position: relative;
+            z-index: 1;
+            background: linear-gradient(135deg, #ffffff 0%, rgba(255, 255, 255, 0.8) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 40px rgba(255, 255, 255, 0.3);
+            margin: 0;
+        }
+        
+        .status {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            padding: 20px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            gap: 16px;
+            position: relative;
+        }
+        
+        .status::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+        }
+        
+        .status-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.8);
+            font-weight: 500;
+        }
+        
+        .online-counter {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 500;
+        }
+        
+        .online-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        .stats-divider {
+            color: var(--gray-400);
+        }
+        
+        #textStats {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+        }
+        
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--success);
+            position: relative;
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        .status-indicator::after {
+            content: '';
+            position: absolute;
+            top: -4px;
+            left: -4px;
+            right: -4px;
+            bottom: -4px;
+            border-radius: 50%;
+            background: var(--success);
+            opacity: 0.3;
+            animation: ripple 2s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.8; }
+        }
+        
+        @keyframes ripple {
+            0% { transform: scale(0.8); opacity: 0.6; }
+            100% { transform: scale(2); opacity: 0; }
+        }
+        
+        .status-text {
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        }
+        
+        .editor-container {
+            padding: 40px;
+            background: rgba(255, 255, 255, 0.02);
+            backdrop-filter: blur(10px);
+            position: relative;
+        }
+        
+        .editor-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 20px;
+            right: 20px;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+        }
+        
+        .editor-wrapper {
+            position: relative;
+            border-radius: 24px;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(40px) saturate(180%);
+            box-shadow: 
+                0 25px 50px rgba(0, 0, 0, 0.15),
+                0 12px 24px rgba(0, 0, 0, 0.1),
+                inset 0 1px 0 rgba(255, 255, 255, 0.8),
+                inset 0 -1px 0 rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .editor-toolbar {
+            background: linear-gradient(135deg, rgba(248, 250, 252, 0.8) 0%, rgba(255, 255, 255, 0.9) 100%);
+            backdrop-filter: blur(20px);
+            padding: 16px 24px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            position: relative;
+        }
+        
+        .editor-toolbar::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.1), transparent);
+        }
+        
+        .toolbar-dots {
+            display: flex;
+            gap: 6px;
+        }
+        
+        .dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        
+        .dot.red { background: #ff5f57; }
+        .dot.yellow { background: #ffbd2e; }
+        .dot.green { background: #28ca42; }
+        
+        .toolbar-title {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--gray-600);
+            margin-left: 8px;
+        }
+        
+        #textEditor {
+            width: 100%;
+            min-height: 600px;
+            border: none;
+            padding: 40px;
+            font-size: 17px;
+            line-height: 1.8;
+            resize: vertical;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: rgba(255, 255, 255, 0.95);
+            color: #1a202c;
+            transition: all 0.4s ease;
+            font-weight: 400;
+        }
+        
+        #textEditor:focus {
+            outline: none;
+            background: rgba(255, 255, 255, 0.98);
+            box-shadow: inset 0 0 0 2px rgba(99, 102, 241, 0.1);
+        }
+        
+        #textEditor::placeholder {
+            color: rgba(0, 0, 0, 0.3);
+            font-style: normal;
+            font-weight: 300;
+        }
+        
+        .save-indicator {
+            margin-top: 20px;
+            padding: 12px 20px;
+            text-align: center;
+            border-radius: 12px;
+            font-weight: 500;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .saved {
+            background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+            color: var(--success);
+            border: 1px solid #a7f3d0;
+        }
+        
+        .saving {
+            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+            color: var(--warning);
+            border: 1px solid #fde68a;
+        }
+        
+        .footer {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(20px);
+            padding: 32px;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 14px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            position: relative;
+        }
+        
+        .footer::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+        }
+        
+        .footer-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        
+        .github-link {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.2s ease;
+        }
+        
+        .github-link:hover {
+            color: var(--primary-dark);
+        }
+        
+        @media (max-width: 768px) {
+            body {
+                padding: 16px;
+            }
+            
+            .container {
+                border-radius: 24px;
+            }
+            
+            .header {
+                padding: 32px 24px;
+            }
+            
+            .header h1 {
+                font-size: 2.5em;
+            }
+            
+            .status {
+                flex-direction: column;
+                gap: 12px;
+                text-align: center;
+                padding: 16px 24px;
+            }
+            
+            .status-right {
+                justify-content: center;
+            }
+            
+            .editor-container {
+                padding: 24px;
+            }
+            
+            .editor-wrapper {
+                border-radius: 20px;
+            }
+            
+            #textEditor {
+                min-height: 500px;
+                font-size: 16px;
+                padding: 24px;
+            }
+            
+            .footer {
+                padding: 24px;
+            }
+            
+            .footer-content {
+                flex-direction: column;
+                gap: 8px;
+            }
+        }
+        
+        .typing-indicator {
+            position: absolute;
+            top: 8px;
+            right: 16px;
+            background: var(--primary);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .typing-indicator.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Writer</h1>
+        </div>
+        
+        <div class="status">
+            <div class="status-indicator"></div>
+            <span id="connectionStatus" class="status-text">Connected - Auto-saving enabled</span>
+            <div class="status-right">
+                <span class="online-counter">
+                    <span class="online-dot"></span>
+                    <span id="userCount">1</span> online
+                </span>
+                <span class="stats-divider">•</span>
+                <span id="textStats">0 words • 0 chars • 0 lines</span>
+            </div>
+        </div>
+        
+        <div class="editor-container">
+            <div class="editor-wrapper">
+                <div class="editor-toolbar">
+                    <div class="toolbar-dots">
+                        <div class="dot red"></div>
+                        <div class="dot yellow"></div>
+                        <div class="dot green"></div>
+                    </div>
+                    <div class="toolbar-title">shared_document.txt</div>
+                    <div class="typing-indicator" id="typingIndicator">Someone is typing...</div>
+                </div>
+                <textarea id="textEditor" placeholder="Start writing...">{{ content }}</textarea>
+            </div>
+            <div id="saveIndicator" class="save-indicator saved">
+                <span>✅</span>
+                <span>All changes saved</span>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <div class="footer-content">
+                <span>Writer</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        const textEditor = document.getElementById('textEditor');
+        const saveIndicator = document.getElementById('saveIndicator');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const userCount = document.getElementById('userCount');
+        const textStats = document.getElementById('textStats');
+        
+        let saveTimeout;
+        let isUpdatingFromServer = false;
+        
+        function showSaveStatus(status) {
+            saveIndicator.className = 'save-indicator ' + status;
+            if (status === 'saved') {
+                saveIndicator.innerHTML = '<span>✅</span><span>All changes saved</span>';
+            } else if (status === 'saving') {
+                saveIndicator.innerHTML = '<span>💾</span><span>Saving changes...</span>';
+            }
+        }
+        
+        function updateTextStats(content) {
+            const words = content.trim() ? content.trim().split(/\s+/).length : 0;
+            const chars = content.length;
+            const lines = content.split('\n').length;
+            textStats.textContent = `${words} words • ${chars} chars • ${lines} lines`;
+        }
+        
+        textEditor.addEventListener('input', function() {
+            if (isUpdatingFromServer) return;
+            
+            showSaveStatus('saving');
+            updateTextStats(textEditor.value);
+            
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                socket.emit('text_change', {
+                    content: textEditor.value
+                });
+                showSaveStatus('saved');
+            }, 500);
+        });
+        
+        socket.on('content_updated', function(data) {
+            isUpdatingFromServer = true;
+            const cursorPos = textEditor.selectionStart;
+            textEditor.value = data.content;
+            textEditor.setSelectionRange(cursorPos, cursorPos);
+            updateTextStats(data.content);
+            isUpdatingFromServer = false;
+        });
+        
+        socket.on('user_count', function(data) {
+            userCount.textContent = data.count;
+        });
+        
+        socket.on('stats_update', function(data) {
+            textStats.textContent = `${data.total_words} words • ${data.total_chars} chars • ${data.total_lines} lines`;
+        });
+        
+        socket.on('connect', function() {
+            connectionStatus.textContent = 'Connected - Auto-saving enabled';
+        });
+        
+        socket.on('disconnect', function() {
+            connectionStatus.textContent = 'Disconnected - Reconnecting...';
+        });
+        
+        // Initialize stats on page load
+        updateTextStats(textEditor.value);
+    </script>
+</body>
+</html>
