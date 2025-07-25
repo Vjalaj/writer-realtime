@@ -4,11 +4,16 @@ import os
 import time
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key'
+import secrets
+app.config['SECRET_KEY'] = secrets.token_hex(32)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # File to store the content
 CONTENT_FILE = 'shared_content.txt'
+
+# Configuration limits
+MAX_TEXT_SIZE = 10000000  # 10MB - adjust as needed
+MAX_CONNECTIONS = 50    # Max simultaneous users
 
 # Track online users
 online_users = set()
@@ -21,9 +26,14 @@ def read_content():
     return ""
 
 def save_content(content):
+    # Enforce size limit
+    if len(content) > MAX_TEXT_SIZE:
+        content = content[:MAX_TEXT_SIZE]
+    
     with open(CONTENT_FILE, 'w', encoding='utf-8') as f:
         f.write(content)
     update_stats(content)
+    return len(content)
 
 def update_stats(content):
     user_stats['total_chars'] = len(content)
@@ -38,9 +48,14 @@ def index():
 
 @socketio.on('connect')
 def handle_connect():
+    if len(online_users) >= MAX_CONNECTIONS:
+        disconnect()
+        return False
+    
     online_users.add(request.sid)
     emit('user_count', {'count': len(online_users)}, broadcast=True)
     emit('stats_update', user_stats)
+    emit('limits', {'max_size': MAX_TEXT_SIZE})
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -49,8 +64,14 @@ def handle_disconnect():
 
 @socketio.on('text_change')
 def handle_text_change(data):
-    content = data['content']
-    save_content(content)
+    content = data.get('content', '')
+    saved_length = save_content(content)
+    
+    # If content was truncated, notify client
+    if len(content) > MAX_TEXT_SIZE:
+        emit('content_truncated', {'max_size': MAX_TEXT_SIZE})
+        content = content[:MAX_TEXT_SIZE]
+    
     emit('content_updated', {'content': content}, broadcast=True, include_self=False)
     emit('stats_update', user_stats, broadcast=True)
 
@@ -62,4 +83,4 @@ if __name__ == '__main__':
     print(f"Server starting...")
     print(f"Access the editor at: http://localhost:5000")
     print(f"Content will be saved to: {os.path.abspath(CONTENT_FILE)}")
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False)
