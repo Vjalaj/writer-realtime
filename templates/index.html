@@ -296,11 +296,43 @@
         .dot.yellow { background: #ffbd2e; }
         .dot.green { background: #28ca42; }
         
-        .toolbar-title {
+        .notebook-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: 12px;
+        }
+        
+        .notebook-select {
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 6px;
+            padding: 4px 8px;
             font-size: 13px;
             font-weight: 500;
-            color: var(--gray-600);
-            margin-left: 8px;
+            color: var(--gray-700);
+            cursor: pointer;
+        }
+        
+        .new-notebook-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+        
+        .new-notebook-btn:hover {
+            background: var(--primary-dark);
+            transform: scale(1.1);
         }
         
         #textEditor {
@@ -506,7 +538,14 @@
                         <div class="dot yellow"></div>
                         <div class="dot green"></div>
                     </div>
-                    <div class="toolbar-title">shared_document.txt</div>
+                    <div class="notebook-controls">
+                        <select id="notebookSelect" class="notebook-select">
+                            {% for notebook in notebooks %}
+                            <option value="{{ notebook }}" {% if notebook == current_notebook %}selected{% endif %}>{{ notebook }}</option>
+                            {% endfor %}
+                        </select>
+                        <button id="newNotebookBtn" class="new-notebook-btn">+</button>
+                    </div>
                     <div class="typing-indicator" id="typingIndicator">Someone is typing...</div>
                 </div>
                 <textarea id="textEditor" placeholder="Start writing...">{{ content }}</textarea>
@@ -538,6 +577,8 @@
         const connectionStatus = document.getElementById('connectionStatus');
         const userCount = document.getElementById('userCount');
         const textStats = document.getElementById('textStats');
+        const notebookSelect = document.getElementById('notebookSelect');
+        const newNotebookBtn = document.getElementById('newNotebookBtn');
         
         let saveTimeout;
         let isUpdatingFromServer = false;
@@ -616,6 +657,39 @@
             showSaveStatus('saving');
             saveIndicator.innerHTML = '<span>⚠️</span><span>Content truncated to ' + data.max_size.toLocaleString() + ' chars</span>';
             saveIndicator.className = 'save-indicator saving';
+        });
+        
+        // Notebook controls
+        notebookSelect.addEventListener('change', function() {
+            socket.emit('switch_notebook', { name: this.value });
+        });
+        
+        newNotebookBtn.addEventListener('click', function() {
+            const name = prompt('Enter notebook name:');
+            if (name && name.trim()) {
+                socket.emit('create_notebook', { name: name.trim() });
+            }
+        });
+        
+        // Notebook socket events
+        socket.on('notebook_created', function(data) {
+            const option = document.createElement('option');
+            option.value = data.name;
+            option.textContent = data.name;
+            notebookSelect.appendChild(option);
+            notebookSelect.value = data.name;
+        });
+        
+        socket.on('notebook_switched', function(data) {
+            isUpdatingFromServer = true;
+            textEditor.value = data.content;
+            notebookSelect.value = data.name;
+            updateTextStats(data.content);
+            isUpdatingFromServer = false;
+        });
+        
+        socket.on('notebook_error', function(data) {
+            alert(data.message);
         });
         
         // Initialize stats on page load

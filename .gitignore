@@ -45,8 +45,8 @@ ehthumbs.db
 Thumbs.db
 
 # Content Files
-shared_content.txt
-*.txt
+notebook_*.txt
+!notebook_default.txt
 *.log
 
 # Flask
